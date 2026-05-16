@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a2b4a">
+<title>Match · Waltz</title>
+<style>
+  :root { --bg:#fff; --fg:#141414; --muted:#666; --border:#e5e5e5; --accent:#1a2b4a;
+    --ok-bg:#e6f4ea; --ok-fg:#1a7f37; --warn-bg:#fff4d6; --warn-fg:#8a5a00;
+    --bad-bg:#fde2e2; --bad-fg:#c00; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font:16px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    background:var(--bg); color:var(--fg); -webkit-tap-highlight-color:transparent; }
+  header { display:flex; align-items:center; padding:.7rem 1rem;
+    border-bottom:1px solid var(--border); }
+  header .t { font-weight:600; flex:1; } header a { color:var(--muted); font-size:.85rem; }
+  main { max-width:640px; margin:0 auto; padding:1.25rem 1rem 3rem; }
+  h1 { font-size:1.35rem; margin:0 0 .25rem; } h2 { font-size:1.1rem; margin:1.5rem 0 .5rem; }
+  p.sub { color:var(--muted); margin:.25rem 0 1.25rem; font-size:.95rem; }
+  input,button,select,textarea { font:inherit; width:100%; padding:.75rem;
+    border:1px solid #ccc; border-radius:8px; background:var(--bg); color:var(--fg); }
+  button { background:var(--accent); color:#fff; border-color:var(--accent);
+    font-weight:600; cursor:pointer; min-height:44px; margin-top:.75rem; }
+  button.secondary { background:transparent; color:var(--fg); border:1px solid var(--border); }
+  button.small { width:auto; min-height:0; padding:.4rem .7rem; margin:0; font-size:.85rem; }
+  .hidden { display:none; }
+  .privacy { background:#f6f8f6; border:1px solid var(--ok-fg); color:#14532d;
+    border-radius:8px; padding:.75rem .9rem; font-size:.85rem; margin:1rem 0; }
+  .card { border:1px solid var(--border); border-radius:10px; padding:.85rem 1rem; margin:.6rem 0; }
+  .card .who { font-weight:600; }
+  .card .meta { color:var(--muted); font-size:.85rem; margin:.15rem 0 .5rem; }
+  .badge { display:inline-block; font-size:.72rem; padding:.12rem .45rem; border-radius:4px;
+    font-weight:600; vertical-align:middle; margin-left:.4rem; }
+  .badge.high { background:var(--ok-bg); color:var(--ok-fg); }
+  .badge.medium { background:var(--warn-bg); color:var(--warn-fg); }
+  .badge.low { background:#eee; color:#555; }
+  .badge.confirmed { background:var(--ok-bg); color:var(--ok-fg); }
+  .badge.rejected { background:var(--bad-bg); color:var(--bad-fg); }
+  .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .row > * { margin:0; }
+  .status { font-size:.9rem; color:var(--muted); margin-top:.5rem; }
+  .error { color:var(--bad-fg); font-size:.9rem; margin-top:.5rem; }
+  .count { color:var(--muted); font-size:.85rem; }
+  progress { width:100%; height:10px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="t">Match</span>
+  <a href="/dashboard">Campaigns</a>
+</header>
+<main>
+  <h1>People You Know</h1>
+  <p class="sub">Help the campaign reach voters you personally know.</p>
+
+  <section id="screen-loading"><p class="status">Loading…</p></section>
+
+  <section id="screen-upload" class="hidden">
+    <p id="hello" class="sub"></p>
+    <div id="picker-card" class="hidden">
+      <h2>Pick your contacts</h2>
+      <p class="sub">Tap below, choose the people you know, and your browser
+        checks them privately — nothing is uploaded.</p>
+      <button type="button" id="pick-btn">Choose from contacts</button>
+    </div>
+    <h2 id="upload-title">Upload your contacts</h2>
+    <p class="sub" id="upload-hint">Export contacts from your phone as a
+      vCard (.vcf) or CSV file and choose it below. Matching happens on your
+      device.</p>
+    <label for="file" style="display:block">
+      <button type="button" id="file-proxy">Choose contacts file</button>
+    </label>
+    <input id="file" type="file" accept=".vcf,.csv,text/vcard,text/csv"
+           style="position:absolute;left:-9999px">
+    <div id="progress-wrap" class="hidden">
+      <p class="status" id="progress-text">Working…</p>
+      <progress id="progress" max="100" value="0"></progress>
+    </div>
+    <p id="upload-error" class="error"></p>
+    <div class="privacy">
+      Your contacts never leave your phone. They are scrambled (one-way
+      hashed) in your browser before anything is sent — the server only ever
+      sees unreadable codes, never names or numbers.
+    </div>
+  </section>
+
+  <section id="screen-results" class="hidden">
+    <h2>Matches <span id="match-count" class="count"></span></h2>
+    <p class="sub">Confirm the people you actually know. Skip anyone you don't.</p>
+    <div id="results"></div>
+    <button id="scan-again" class="secondary">Upload a different file</button>
+  </section>
+</main>
+
+<template id="card-tpl">
+  <div class="card">
+    <div class="who"></div>
+    <div class="meta"></div>
+    <div class="matched-on count"></div>
+    <div class="row tag-row hidden">
+      <select class="tag">
+        <option value="">relationship…</option>
+        <option value="family">family</option>
+        <option value="friend">friend</option>
+        <option value="neighbor">neighbor</option>
+        <option value="coworker">coworker</option>
+        <option value="acquaintance">acquaintance</option>
+      </select>
+    </div>
+    <div class="row">
+      <button class="small confirm" type="button">I know them</button>
+      <button class="small secondary reject" type="button">Not me</button>
+      <span class="state status"></span>
+    </div>
+  </div>
+</template>
+
+<script>
+// Campaign base path: this page is served at /c/<id>/match.
+const BASE = location.pathname.replace(/\/match\/?$/, '');
+let SALT = '';
+
+// ---- Normalization: MUST match lib/match-normalize.js exactly ----
+const COMBINING = /[̀-ͯ]/g;
+const NON_ALNUM = /[^a-z0-9]/g;
+const NON_DIGIT = /\D+/g;
+const ADDR_WORDS = [[/\bstreet\b/g,'st'],[/\bavenue\b/g,'ave'],[/\bboulevard\b/g,'blvd'],
+  [/\broad\b/g,'rd'],[/\bdrive\b/g,'dr'],[/\blane\b/g,'ln'],[/\bcourt\b/g,'ct'],[/\bapartment\b/g,'apt']];
+function normName(s){ if(!s) return ''; s=String(s).normalize('NFKD').toLowerCase().replace(COMBINING,''); return s.replace(NON_ALNUM,'').trim(); }
+function normZip(s){ if(!s) return ''; return String(s).replace(NON_DIGIT,'').slice(0,5); }
+function normAddr(s){ if(!s) return ''; s=String(s).toLowerCase(); for(const [p,r] of ADDR_WORDS) s=s.replace(p,r); return s.replace(NON_ALNUM,'').trim(); }
+async function sha256hex(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+const salted = (v) => sha256hex(`${SALT}|${v}`);
+
+const NICKNAMES = {
+  bob:'robert',bobby:'robert',rob:'robert',robbie:'robert',
+  bill:'william',billy:'william',will:'william',willie:'william',
+  jim:'james',jimmy:'james',jamie:'james',
+  jack:'john',johnny:'john',jon:'john',
+  mike:'michael',mikey:'michael',mick:'michael',
+  rick:'richard',ricky:'richard',dick:'richard',rich:'richard',
+  dave:'david',davey:'david',
+  dan:'daniel',danny:'daniel',
+  tom:'thomas',tommy:'thomas',
+  tony:'anthony',ant:'anthony',
+  chris:'christopher',topher:'christopher',
+  steve:'steven',stevie:'steven',stephen:'steven',
+  joe:'joseph',joey:'joseph',
+  ed:'edward',eddie:'edward',ned:'edward',ted:'edward',
+  ken:'kenneth',kenny:'kenneth',
+  greg:'gregory',jeff:'jeffrey',larry:'lawrence',matt:'matthew',
+  nate:'nathaniel',nathan:'nathaniel',
+  pat:'patrick',sam:'samuel',sammy:'samuel',tim:'timothy',
+  andy:'andrew',drew:'andrew',ben:'benjamin',benny:'benjamin',
+  charlie:'charles',chuck:'charles',chas:'charles',
+  frank:'franklin',frankie:'franklin',fred:'frederick',freddie:'frederick',
+  gabe:'gabriel',hank:'henry',harry:'henry',nick:'nicholas',phil:'philip',
+  ron:'ronald',ronnie:'ronald',sal:'salvatore',vinny:'vincent',vince:'vincent',
+  walt:'walter',zach:'zachary',zack:'zachary',
+  abby:'abigail',ali:'alison',allie:'alison',becky:'rebecca',
+  beth:'elizabeth',betsy:'elizabeth',betty:'elizabeth',
+  liz:'elizabeth',lizzy:'elizabeth',eliza:'elizabeth',libby:'elizabeth',
+  cathy:'catherine',kate:'catherine',katie:'catherine',kathy:'catherine',
+  cat:'catherine',katherine:'catherine',kathryn:'catherine',
+  cindy:'cynthia',deb:'deborah',debbie:'deborah',dee:'deanna',
+  ellie:'eleanor',nell:'eleanor',fran:'frances',francie:'frances',
+  gail:'abigail',ginny:'virginia',jan:'janet',
+  jen:'jennifer',jenny:'jennifer',jenn:'jennifer',
+  jess:'jessica',jessie:'jessica',jo:'joanne',josie:'josephine',
+  judy:'judith',julie:'julia',kim:'kimberly',laurie:'laura',
+  lily:'lillian',lori:'lorraine',
+  maggie:'margaret',meg:'margaret',peggy:'margaret',marge:'margaret',
+  mandy:'amanda',mel:'melissa',missy:'melissa',nan:'nancy',pam:'pamela',
+  trish:'patricia',tricia:'patricia',sandy:'sandra',
+  sue:'susan',susie:'susan',suzy:'susan',
+  terri:'theresa',terry:'theresa',tess:'theresa',
+  tina:'christina',chrissy:'christina',val:'valerie',
+  vicky:'victoria',vickie:'victoria',wendy:'gwendolyn',
+};
+function canonFirst(n){ return Object.prototype.hasOwnProperty.call(NICKNAMES,n)?NICKNAMES[n]:n; }
+function soundex(s){
+  s=String(s||'').toUpperCase().replace(/[^A-Z]/g,'');
+  if(!s) return '';
+  const code=(ch)=>{ if('BFPV'.includes(ch))return'1'; if('CGJKQSXZ'.includes(ch))return'2';
+    if('DT'.includes(ch))return'3'; if(ch==='L')return'4'; if('MN'.includes(ch))return'5';
+    if(ch==='R')return'6'; return''; };
+  let out=s[0], prev=code(s[0]);
+  for(let i=1;i<s.length&&out.length<4;i++){ const cc=code(s[i]);
+    if(cc&&cc!==prev) out+=cc; if(s[i]!=='H'&&s[i]!=='W') prev=cc; }
+  return (out+'000').slice(0,4);
+}
+async function personHashes(p){
+  const nf=normName(p.first), nl=normName(p.last), nz=normZip(p.zip), na=normAddr(p.addr);
+  const cf=canonFirst(nf), fi=nf.slice(0,1), sf=soundex(nf), sl=soundex(nl);
+  const specs=[];
+  const add=(cond,conf,v)=>{ if(cond) specs.push([conf,v]); };
+  add(nf&&nl&&na,3,`nameaddr:${nf}:${nl}:${na}`);
+  add(cf&&nl&&na,3,`nameaddr:${cf}:${nl}:${na}`);
+  add(nf&&nl&&nz,3,`namezip:${nf}:${nl}:${nz}`);
+  add(cf&&nl&&nz,3,`namezip:${cf}:${nl}:${nz}`);
+  add(nf&&nl,2,`name:${nf}:${nl}`);
+  add(cf&&nl,2,`name:${cf}:${nl}`);
+  add(nf&&nl,2,`name:${nl}:${nf}`);
+  add(nl&&nz,2,`lastzip:${nl}:${nz}`);
+  add(fi&&nl,1,`filast:${fi}:${nl}`);
+  add(sf&&sl,1,`phon:${sf}:${sl}`);
+  add(sl&&nz,1,`phonzip:${sl}:${nz}`);
+  add(sf&&nl,1,`sfln:${sf}:${nl}`);
+  add(nf&&sl,1,`nfsl:${nf}:${sl}`);
+  add(cf&&sl,1,`cfsl:${cf}:${sl}`);
+  add(fi&&sl,1,`fisl:${fi}:${sl}`);
+  const lp=nl.slice(0,4);
+  add(nf&&nl.length>=4,1,`pfx:${nf}:${lp}`);
+  add(cf&&nl.length>=4,1,`pfx:${cf}:${lp}`);
+  add(fi&&nl.length>=4,1,`pfxi:${fi}:${lp}`);
+  add(nl,1,`lastonly:${nl}`);
+  const best=new Map();
+  for(const [conf,v] of specs){ const h=await salted(v); if(!best.has(h)||best.get(h)<conf) best.set(h,conf); }
+  return [...best.entries()].map(([h,conf])=>({h,conf}));
+}
+
+// ---- Contact parsing ----
+function splitName(full){
+  const parts = String(full||'').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ['',''];
+  if (parts.length === 1) return ['', parts[0]];
+  return [parts[0], parts[parts.length-1]];
+}
+function parseVCard(text){
+  const out = [];
+  const cards = text.split(/BEGIN:VCARD/i).slice(1);
+  for (let raw of cards){
+    raw = raw.split(/END:VCARD/i)[0];
+    const lines = raw.replace(/\r\n[ \t]/g,'').split(/\r?\n/);
+    let fn='', first='', last='', zip='', addr='';
+    for (const line of lines){
+      const m = line.match(/^([^:;]+)(;[^:]*)?:(.*)$/);
+      if (!m) continue;
+      const key = m[1].toUpperCase(), val = m[3];
+      if (key==='FN') fn = val;
+      else if (key==='N'){ const p = val.split(';'); last = p[0]||''; first = p[1]||''; }
+      else if (key==='ADR'){ const p = val.split(';'); addr = p[2]||''; zip = p[5]||''; }
+    }
+    if (!first && !last) [first,last] = splitName(fn);
+    if (first||last) out.push({ display: fn || `${first} ${last}`.trim(), first, last, zip, addr });
+  }
+  return out;
+}
+function parseCsvRows(text){
+  const rows=[]; let row=[], field='', q=false;
+  for (let i=0;i<text.length;i++){ const ch=text[i];
+    if (q){ if(ch==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; } else field+=ch; }
+    else if (ch==='"') q=true;
+    else if (ch===',') { row.push(field); field=''; }
+    else if (ch==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+    else if (ch!=='\r') field+=ch;
+  }
+  if (field.length||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+const HDR_TOKENS = ['first','last','name','given','family','surname','fname','lname',
+  'phone','mobile','cell','tel','zip','postal','address','addr','street','email','contact'];
+function looksLikeHeader(cells){
+  return cells.some(c=>{ const v=String(c||'').toLowerCase().trim();
+    return v && HDR_TOKENS.some(t=>v.includes(t)); });
+}
+function inferColumns(rows){
+  const n = rows.reduce((m,r)=>Math.max(m,r.length),0);
+  const sample = rows.slice(0, 80);
+  const st = [];
+  for (let i=0;i<n;i++){
+    let nonEmpty=0, phone=0, zip=0, email=0, addr=0, alpha=0, words=0;
+    for (const r of sample){ const cell=String(r[i]==null?'':r[i]).trim(); if(!cell) continue;
+      nonEmpty++;
+      const digits=cell.replace(/\D+/g,'');
+      if (cell.includes('@')) email++;
+      if (digits.length>=10 && digits.length/cell.replace(/\s/g,'').length>0.7) phone++;
+      if (/^\d{5}(-\d{4})?$/.test(cell)) zip++;
+      if (/^\s*\d+\s+\S+/.test(cell) && /[a-z]/i.test(cell)) addr++;
+      if (/[a-z]/i.test(cell) && /^[a-z .,'’-]+$/i.test(cell)){ alpha++; words+=cell.split(/\s+/).filter(Boolean).length; }
+    }
+    st.push({ i, nonEmpty, phone, zip, email, addr, alpha, words, avgWords: alpha? words/alpha : 0 });
+  }
+  const rowsSeen = Math.max(1, sample.length);
+  const has = st.filter(s=> s.nonEmpty/rowsSeen >= 0.5);
+  const fr = (s,k)=> s.nonEmpty? s[k]/s.nonEmpty : 0;
+  const pick = (k,thr)=>{ let best=-1,bv=thr; for(const s of has){ const f=fr(s,k); if(f>bv){bv=f;best=s.i;} } return best; };
+  const iZip = pick('zip',0.5);
+  let iAddr = pick('addr',0.4);
+  if (iAddr===iZip) iAddr=-1;
+  const phoneCols = new Set(has.filter(s=>fr(s,'phone')>0.6).map(s=>s.i));
+  const emailCols = new Set(has.filter(s=>fr(s,'email')>0.5).map(s=>s.i));
+  const nameCols = has.filter(s=> s.i!==iZip && s.i!==iAddr && !phoneCols.has(s.i)
+      && !emailCols.has(s.i) && fr(s,'alpha')>0.6).sort((a,b)=> a.i-b.i);
+  let iFirst=-1, iLast=-1, iName=-1;
+  if (nameCols.length>=2){ iFirst=nameCols[0].i; iLast=nameCols[1].i; }
+  else if (nameCols.length===1){
+    if (nameCols[0].avgWords>=1.6) iName=nameCols[0].i; else iLast=nameCols[0].i;
+  }
+  return { iFirst,iLast,iName,iZip,iAddr };
+}
+function parseContactsCsv(text){
+  const rows = parseCsvRows(text).filter(r=>r.some(x=>String(x||'').trim()!==''));
+  if (!rows.length) return [];
+  const headed = looksLikeHeader(rows[0]);
+  let iFirst=-1,iLast=-1,iName=-1,iZip=-1,iAddr=-1, startRow=0;
+  if (headed){
+    const hdr = rows[0].map(h=>String(h).toLowerCase().trim());
+    const find=(...names)=>{ for(const x of names){ const i=hdr.findIndex(h=>h===x); if(i>=0) return i; }
+      for(const x of names){ const i=hdr.findIndex(h=>h.includes(x)); if(i>=0) return i; } return -1; };
+    iFirst=find('first name','given name','first','given','fname','firstname');
+    iLast=find('last name','family name','surname','last','family','lname','lastname');
+    iName=find('full name','display name','name','contact');
+    iZip=find('postal code','zip code','zip','postal','zipcode');
+    iAddr=find('address 1','street address','street','address','addr');
+    if (iAddr===iZip) iAddr=-1;
+    startRow=1;
+  }
+  if (iFirst<0 && iLast<0 && iName<0){
+    const inf = inferColumns(rows);
+    iFirst=inf.iFirst; iLast=inf.iLast; iName=inf.iName;
+    if (iZip<0) iZip=inf.iZip;
+    if (iAddr<0) iAddr=inf.iAddr;
+    startRow=0;
+  }
+  const out=[];
+  for (let r=startRow;r<rows.length;r++){ const c=rows[r];
+    let first = iFirst>=0?String(c[iFirst]||'').trim():'', last = iLast>=0?String(c[iLast]||'').trim():'';
+    if (!first && !last && iName>=0) [first,last]=splitName(c[iName]);
+    const zip = iZip>=0?String(c[iZip]||'').trim():'', addr = iAddr>=0?String(c[iAddr]||'').trim():'';
+    if (first||last) out.push({ display:`${first} ${last}`.trim()||(iName>=0?String(c[iName]||''):''), first, last, zip, addr });
+  }
+  return out;
+}
+
+async function buildBundle(contacts, onProgress){
+  const all = new Set();
+  const byHash = {};
+  let done=0;
+  for (const c of contacts){
+    if (c.first || c.last){
+      const variants = await personHashes(c);
+      for (const { h } of variants){ all.add(h); if (!byHash[h]) byHash[h]=c.display; }
+    }
+    if (onProgress && (++done % 25 === 0)) onProgress(done, contacts.length);
+  }
+  return { hashes:[...all], byHash };
+}
+
+// ---- API (same-origin; session cookie auth) ----
+async function api(path, opts={}){
+  const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
+  const res = await fetch(BASE + '/api/match' + path, Object.assign({}, opts, { headers }));
+  if (res.status === 401 || res.status === 403){
+    location.href = '/login?next=' + encodeURIComponent(location.pathname);
+    return { ok:false, status:res.status, body:null };
+  }
+  let body = null; try { body = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, body };
+}
+function show(id){ for (const s of document.querySelectorAll('main > section')) s.classList.toggle('hidden', s.id!==id); }
+
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const CONTACT_PICKER = ('contacts' in navigator) && ('ContactsManager' in window);
+
+function enterUpload(name, voterCount, ready){
+  document.getElementById('hello').textContent =
+    `Signed in as ${name}. ${ready ? voterCount + ' voters in this campaign.' : 'No voter file yet — matching unavailable until an admin uploads one.'}`;
+  const pickerCard = document.getElementById('picker-card');
+  if (CONTACT_PICKER && !IS_IOS){
+    pickerCard.classList.remove('hidden');
+    document.getElementById('upload-title').textContent = 'Or upload a file';
+  } else {
+    pickerCard.classList.add('hidden');
+  }
+  show('screen-upload');
+}
+
+document.getElementById('file-proxy').addEventListener('click', ()=> document.getElementById('file').click());
+const _pickBtn = document.getElementById('pick-btn');
+if (_pickBtn) _pickBtn.addEventListener('click', pickContacts);
+document.getElementById('scan-again').addEventListener('click', ()=> show('screen-upload'));
+
+async function processContacts(contacts){
+  const err = document.getElementById('upload-error'); err.textContent='';
+  const wrap = document.getElementById('progress-wrap');
+  const ptext = document.getElementById('progress-text');
+  const pbar = document.getElementById('progress');
+  if (!contacts.length){ err.textContent='No contacts found.'; return; }
+  wrap.classList.remove('hidden'); pbar.value=0;
+  ptext.textContent = `Scrambling ${contacts.length} contacts on your device…`;
+  const { hashes, byHash } = await buildBundle(contacts, (d,t)=>{ pbar.value = Math.round(d/t*90); });
+  pbar.value = 95; ptext.textContent = 'Checking for matches…';
+  const r = await api('', { method:'POST', body: JSON.stringify({ hashes }) }).catch(()=>null);
+  wrap.classList.add('hidden');
+  if (!r || !r.ok){ err.textContent = (r&&r.body&&r.body.error) || 'Matching failed.'; return; }
+  renderMatches(r.body.matches || [], byHash);
+}
+
+document.getElementById('file').addEventListener('change', async (e)=>{
+  const f = e.target.files && e.target.files[0];
+  const err = document.getElementById('upload-error'); err.textContent='';
+  if (!f) return;
+  let text='';
+  try { text = await f.text(); } catch { err.textContent='Could not read that file.'; return; }
+  const isVcf = /BEGIN:VCARD/i.test(text) || /\.vcf$/i.test(f.name);
+  const contacts = isVcf ? parseVCard(text) : parseContactsCsv(text);
+  await processContacts(contacts);
+});
+
+async function pickContacts(){
+  const err = document.getElementById('upload-error'); err.textContent='';
+  let supported = [];
+  try { supported = await navigator.contacts.getProperties(); } catch { supported = []; }
+  const want = ['name','address','tel'].filter((p)=>supported.includes(p));
+  if (!want.includes('name')){ err.textContent='Your browser can’t share contact names.'; return; }
+  let picked = [];
+  try { picked = await navigator.contacts.select(want, { multiple:true }); }
+  catch { return; }
+  const contacts = [];
+  for (const c of picked){
+    const full = (c.name && c.name[0]) ? c.name[0] : '';
+    const [first,last] = splitName(full);
+    let zip='', addr='';
+    if (c.address && c.address[0]){
+      const a = c.address[0];
+      zip = a.postalCode || '';
+      addr = (a.addressLine && a.addressLine[0]) || '';
+    }
+    if (first||last) contacts.push({ display: full || `${first} ${last}`.trim(), first, last, zip, addr });
+  }
+  await processContacts(contacts);
+}
+
+function renderMatches(matches, byHash){
+  const wrap = document.getElementById('results'); wrap.textContent='';
+  document.getElementById('match-count').textContent = `(${matches.length})`;
+  const order = { high:0, medium:1, low:2 };
+  matches.sort((a,b)=> (order[a.confidence]-order[b.confidence]) ||
+    a.voter.last_name.localeCompare(b.voter.last_name));
+  const tpl = document.getElementById('card-tpl');
+  for (const m of matches){
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('.card');
+    node.querySelector('.who').textContent = `${m.voter.first_name} ${m.voter.last_name}`.trim();
+    const conf = document.createElement('span');
+    conf.className = 'badge ' + m.confidence;
+    conf.textContent = m.confidence + ' confidence';
+    node.querySelector('.who').appendChild(conf);
+    node.querySelector('.meta').textContent =
+      [m.voter.address, m.voter.city, m.voter.zip].filter(Boolean).join(', ');
+    const mc = byHash[m.matchedHash];
+    node.querySelector('.matched-on').textContent = mc ? `matched your contact “${mc}”` : '';
+    const tagRow = node.querySelector('.tag-row');
+    const tagSel = node.querySelector('.tag');
+    const state = node.querySelector('.state');
+    const confirmBtn = node.querySelector('.confirm');
+    const rejectBtn = node.querySelector('.reject');
+
+    function setState(s){
+      state.textContent = s==='confirmed' ? '✓ confirmed' : s==='rejected' ? 'skipped' : '';
+      card.querySelectorAll('.badge.confirmed,.badge.rejected').forEach(b=>b.remove());
+      if (s){ const b=document.createElement('span'); b.className='badge '+s; b.textContent=s; card.querySelector('.who').appendChild(b); }
+    }
+    if (m.status){ setState(m.status); if (m.relationshipTag){ tagRow.classList.remove('hidden'); tagSel.value = m.relationshipTag; } }
+
+    confirmBtn.addEventListener('click', async ()=>{
+      tagRow.classList.remove('hidden');
+      confirmBtn.disabled = true; state.textContent='saving…';
+      const r = await api('/confirm', { method:'POST', body: JSON.stringify({
+        voter_id: m.voter.voter_id, relationshipTag: tagSel.value || null, matchType: m.matchType }) }).catch(()=>null);
+      confirmBtn.disabled = false;
+      if (r&&r.ok) setState('confirmed'); else state.textContent='error — retry';
+    });
+    tagSel.addEventListener('change', async ()=>{
+      if (!tagSel.value) return;
+      const r = await api('/confirm', { method:'POST', body: JSON.stringify({
+        voter_id: m.voter.voter_id, relationshipTag: tagSel.value, matchType: m.matchType }) }).catch(()=>null);
+      state.textContent = (r&&r.ok) ? '✓ saved' : 'error';
+    });
+    rejectBtn.addEventListener('click', async ()=>{
+      rejectBtn.disabled=true; state.textContent='saving…';
+      const r = await api('/reject', { method:'POST', body: JSON.stringify({ voter_id: m.voter.voter_id }) }).catch(()=>null);
+      rejectBtn.disabled=false;
+      if (r&&r.ok) setState('rejected'); else state.textContent='error — retry';
+    });
+    wrap.appendChild(node);
+  }
+  if (!matches.length){
+    const p = document.createElement('p'); p.className='sub';
+    p.textContent='No matches found in your contacts.'; wrap.appendChild(p);
+  }
+  show('screen-results');
+}
+
+// ---- Boot ----
+(async () => {
+  const r = await api('/session').catch(()=>null);
+  if (!r || !r.ok){ return; } // api() already redirected on 401/403
+  SALT = r.body.salt;
+  enterUpload(r.body.name, r.body.voterCount, r.body.ready);
+})();
+</script>
+</body>
+</html>

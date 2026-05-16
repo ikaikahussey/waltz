@@ -1,0 +1,59 @@
+// routes/campaigns.js — Create a campaign (creator becomes its admin).
+
+import { Hono } from 'hono';
+import { getDb } from '../lib/db.js';
+import { layout, flash } from '../lib/html.js';
+import { requireUser } from '../lib/auth.js';
+import { newCampaignId, newMatchSalt, slugify } from '../lib/ids.js';
+
+const router = new Hono();
+
+router.get('/new', requireUser, (c) => {
+  const user = c.get('user');
+  const body = `
+  <section class="card narrow">
+    <h1>New campaign</h1>
+    <p class="muted">You'll be the first admin. After creating it you can
+      upload a voter file and invite volunteers.</p>
+    <form method="post" action="/campaigns">
+      <label>Campaign name
+        <input name="name" required minlength="2" maxlength="100"
+               placeholder="e.g. Friends of Jane 2026"></label>
+      <button type="submit">Create campaign</button>
+    </form>
+  </section>`;
+  return c.html(layout({ title: 'New campaign', user, body, active: 'new' }));
+});
+
+router.post('/', requireUser, async (c) => {
+  const user = c.get('user');
+  const form = await c.req.parseBody();
+  const name = String(form.name || '').trim();
+  if (name.length < 2 || name.length > 100) {
+    return c.html(
+      layout({
+        title: 'New campaign', user,
+        body: `<section class="card narrow">${flash('error', 'Campaign name must be 2-100 characters.')}
+          <p><a href="/campaigns/new">Back</a></p></section>`,
+      }),
+      400,
+    );
+  }
+  const db = getDb();
+  const id = newCampaignId();
+  const now = Date.now();
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO campaigns (id, name, slug, match_salt, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(id, name, slugify(name), newMatchSalt(), user.id, now);
+    db.prepare(
+      `INSERT INTO campaign_members (campaign_id, user_id, role, created_at)
+       VALUES (?, ?, 'admin', ?)`,
+    ).run(id, user.id, now);
+  });
+  tx();
+  return c.redirect(`/c/${id}/admin`, 302);
+});
+
+export default router;
