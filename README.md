@@ -65,6 +65,31 @@ npm run dev         # http://localhost:3000
 signup → campaign → invite → join → upload → walk → match). `npm run lint`
 runs eslint.
 
+## Deploy
+
+Waltz needs two things from its host:
+
+1. **A persistent disk** for the SQLite database (WAL mode — the `*.db`,
+   `*.db-wal`, and `*.db-shm` files must all survive restarts).
+2. **`PUBLIC_ORIGIN` set to your real `https://…` URL.** This makes the
+   session cookie `Secure` and is the base for the invite links shown in
+   the admin UI. A wrong value means broken invites and/or refused cookies.
+
+Generic steps on any Node ≥ 20 host:
+
+```
+npm ci
+PUBLIC_ORIGIN=https://your-domain DATABASE_PATH=/data/waltz.db npm start
+```
+
+Health check: `GET /healthz`.
+
+### Render (one-click, mirrors walk)
+
+`render.yaml` provisions a web service plus a 1 GB persistent disk at
+`/data`. Push to GitHub, then in Render: **New + → Blueprint → point at
+this repo**. In the dashboard, set `PUBLIC_ORIGIN` to your service URL.
+
 ## Per-campaign privacy
 
 Each campaign has its own random `match_salt`. A contact bundle hashed for
