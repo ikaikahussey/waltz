@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: waltz
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    disk:
+      name: waltz-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_PATH
+        value: /data/waltz.db
+      # Set in the Render dashboard to your real https URL. This makes
+      # session cookies Secure and is the base for invite links shown in
+      # the admin UI. Leave sync:false so it isn't checked into git.
+      - key: PUBLIC_ORIGIN
+        sync: false
